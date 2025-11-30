@@ -11,7 +11,8 @@ model = ChatOllama(model="qwen2.5:3b")
 embedding_model = OllamaEmbeddings(model='mxbai-embed-large:335m')
 
 class AgentState(TypedDict):
-    messages: HumanMessage | AIMessage
+    messages: List[HumanMessage | AIMessage]
+
 
 
 def log_turn_metrics(turn_id, input_text, memory_context, response_text, usage):
