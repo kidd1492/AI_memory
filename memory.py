@@ -19,6 +19,7 @@ class RAGDatabase:
         """)
         self.conn.commit()
 
+
     def add_message(self, role: str, content: str, embedding: np.ndarray):
         cursor = self.conn.cursor()
         embedding_blob = embedding.tobytes()
@@ -28,10 +29,12 @@ class RAGDatabase:
         """, (role, content, embedding_blob))
         self.conn.commit()
 
+
     def count(self) -> int:
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM messages")
         return cursor.fetchone()[0]
+
 
     def search_similar(self, query_embedding: np.ndarray, top_k: int = 5, threshold: float = 0.5) -> List[Tuple[str, str]]:
         cursor = self.conn.cursor()
