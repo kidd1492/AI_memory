@@ -50,3 +50,18 @@ class RAGDatabase:
         results.sort(reverse=True)
         print(f"\nResults similarity: {results}")
         return [(role, content) for similarity, role, content in results[:top_k]]
+
+
+    def get_last_message(self):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT content FROM messages
+            ORDER BY id DESC
+            LIMIT 1
+        """)
+        row = cursor.fetchone()
+        if row:
+            return row[0]   # content string
+        return None
+
+
