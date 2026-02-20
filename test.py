@@ -15,7 +15,6 @@ embedding_model = OllamaEmbeddings(model='mxbai-embed-large:335m')
 class AgentState(TypedDict):
     messages: List[HumanMessage | AIMessage]
     retrieved_memory: str | None
-    last_embedding: np.ndarray | None
 
 
 def log_turn_metrics(turn_id, input_text, memory_context, response_text, usage):
@@ -32,8 +31,55 @@ def log_turn_metrics(turn_id, input_text, memory_context, response_text, usage):
         f.write(json.dumps(log_entry) + "\n")
 
 
+def embed_messages(content):
+    embedding = embedding_model.embed_query(content)
+    embedding_array = np.array(embedding, dtype=np.float32)
+    return embedding_array
+
+
+def check_memory(embedding):
+    retrieved = db.search_similar(embedding, top_k=5)
+    memory_context = "\n".join(
+        [f"{role}: {content}" for role, content in retrieved]
+    ) or "No relevant memory found."
+
+    return memory_context
+
+
+def store_response(message, embedding_array):
+    text = message.content
+
+    db.add_message(
+        role=message.type,
+        content=text,
+        embedding=embedding_array
+    )
+
+    return
+
+
+def human_node(state: AgentState):
+    user_message = state["messages"][0]          # HumanMessage object
+    user_text = user_message.content             # Extract text
+
+    embedding_array = embed_messages(user_text)
+
+    # Retrieve memory
+    if db.count() == 0:
+        memory_context = "No prior memory available."
+    else:
+        memory_context = check_memory(embedding_array)
+
+    # Store human message in DB
+    store_response(user_message, embedding_array)
+
+    # Update state
+    state["retrieved_memory"] = memory_context
+    return state
+
+
+
 def chat_node(state: AgentState):
-    """Generate the model response using retrieved memory."""
     user_message = state["messages"][0]
     memory_context = state["retrieved_memory"]
 
@@ -55,62 +101,31 @@ def chat_node(state: AgentState):
         usage=usage
     )
 
-    return {
-        "messages": [response],
-        "retrieved_memory": memory_context,
-        "last_embedding": None
-    }
+    embedding_array = embed_messages(response.content)
+    store_response(response, embedding_array)
 
-
-def store_response_node(state: AgentState):
-    """Embed and store the AI response."""
-    message = state["messages"][0]
-    embedding = embedding_model.embed_query(message.content)
-    embedding_array = np.array(embedding, dtype=np.float32)
-
-    db.add_message(
-        role=message.type,
-        content=message.content,
-        embedding=embedding_array
-    )
-
+    # Replace messages with the AI response
+    state["messages"] = [response]
     return state
 
 
+# -------------------------
+# GRAPH DEFINITION
+# -------------------------
 graph = StateGraph(AgentState)
 
+graph.add_node("human_node", human_node)
 graph.add_node("chat_node", chat_node)
-graph.add_node("store_response_node", store_response_node)
 
-graph.add_edge(START, "chat_node")
-graph.add_edge("chat_node", "store_response_node")
-graph.add_edge("store_response_node", END)
+
+graph.add_edge(START, "human_node")
+graph.add_edge("human_node", "chat_node")
+graph.add_edge("chat_node", END)
 
 agent = graph.compile()
 
 
-user_input = input("Enter Question: ")
-inputs = {"messages": [HumanMessage(content=user_input)]}
-embedding = embedding_model.embed_query(user_input)
-embedding_array = np.array(embedding, dtype=np.float32)
-
-if db.count() == 0:
-        memory_context = "No prior memory available."
-else:
-    retrieved = db.search_similar(embedding_array, top_k=5)
-    memory_context = "\n".join([f"{role}: {content}" for role, content in retrieved]) or \
-                        "No relevant memory found."
-    
-db.add_message(
-    role='human',
-    content=user_input,
-    embedding=embedding_array
-    )
-
-
-response = agent.invoke({
-    "messages": [HumanMessage(content=user_input)],
-    "retrieved_memory": memory_context,
-})
-
-#.invoke(inputs)
+if __name__ == "__main__":
+    user_input = input("Enter Question: ")
+    inputs = {"messages": [HumanMessage(content=user_input)]}
+    agent.invoke(inputs)
