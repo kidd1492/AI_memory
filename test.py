@@ -1,26 +1,23 @@
-from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_ollama import ChatOllama
 from langgraph.graph import START, END, StateGraph
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-import numpy as np
 from typing import TypedDict, List
-from memory import RAGDatabase
-import json
-
+from token_log import log_turn_metrics
+from memory_service import *
 
 @tool
 def get_last_message_tool() -> str:
     """Return the last stored message content from memory."""
+    print("tool called", "\n")
     last = db.get_last_message()
     if last is None:
         return "No messages stored yet."
+    print(f"\nlast = {last}")
     return last
 
 
-
-db = RAGDatabase()
 model = ChatOllama(model="qwen2.5:3b").bind_tools(tools=[get_last_message_tool])
-embedding_model = OllamaEmbeddings(model='mxbai-embed-large:335m')
 
 
 class AgentState(TypedDict):
@@ -29,43 +26,6 @@ class AgentState(TypedDict):
     tool_message: List[ToolMessage]
     retrieved_memory: str | None
 
-
-def log_turn_metrics(turn_id, input_text, memory_context, response_text, usage):
-    log_entry = {
-        "turn": turn_id,
-        "input": input_text,
-        "retrieved_memory": memory_context,
-        "response": response_text,
-        "input_tokens": usage.get("input_tokens"),
-        "output_tokens": usage.get("output_tokens"),
-        "total_tokens": usage.get("total_tokens")
-    }
-    with open("token_metrics.jsonl", "a") as f:
-        f.write(json.dumps(log_entry) + "\n")
-
-
-def embed_messages(content):
-    embedding = embedding_model.embed_query(content)
-    embedding_array = np.array(embedding, dtype=np.float32)
-    return embedding_array
-
-
-def check_memory(embedding):
-    retrieved = db.search_similar(embedding, top_k=5)
-    memory_context = "\n".join(
-        [f"{role}: {content}" for role, content in retrieved]
-    ) or "No relevant memory found."
-    return memory_context
-
-
-def store_response(message, embedding_array):
-    text = message.content
-    db.add_message(
-        role=message.type,
-        content=text,
-        embedding=embedding_array
-    )
-    return
 
 TOOLS = {
     "get_last_message_tool": get_last_message_tool,
@@ -86,7 +46,7 @@ def tool_node(state: AgentState):
     if tool_fn is None:
         result = f"Error: unknown tool '{tool_name}'"
     else:
-        result = tool_fn.invoke(tool_args)
+        result = tool_fn.invoke(tool_args) 
 
     tool_msg = ToolMessage(
         content=str(result),

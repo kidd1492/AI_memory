@@ -55,13 +55,15 @@ class RAGDatabase:
     def get_last_message(self):
         cursor = self.conn.cursor()
         cursor.execute("""
-            SELECT content FROM messages
-            ORDER BY id DESC
-            LIMIT 1
+            SELECT content FROM messages WHERE role == "ai"
         """)
-        row = cursor.fetchone()
+        row = cursor.fetchall()
+
         if row:
-            return row[0]   # content string
+            try:
+                return row[-2]   # content string
+            except:
+                if IndexError:return None
         return None
 
 
