@@ -1,6 +1,6 @@
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langgraph.graph import START, END, StateGraph
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 import numpy as np
 from typing import TypedDict, List
 from memory import RAGDatabase
@@ -13,7 +13,9 @@ embedding_model = OllamaEmbeddings(model='mxbai-embed-large:335m')
 
 
 class AgentState(TypedDict):
-    messages: List[HumanMessage | AIMessage]
+    messages: List[HumanMessage]
+    ai_message: List[AIMessage]
+    tool_message: List[ToolMessage]
     retrieved_memory: str | None
 
 
@@ -105,7 +107,7 @@ def chat_node(state: AgentState):
     store_response(response, embedding_array)
 
     # Replace messages with the AI response
-    state["messages"] = [response]
+    state["ai_message"] = [response]
     return state
 
 
@@ -126,6 +128,9 @@ agent = graph.compile()
 
 
 if __name__ == "__main__":
-    user_input = input("Enter Question: ")
-    inputs = {"messages": [HumanMessage(content=user_input)]}
-    agent.invoke(inputs)
+    while True:
+        user_input = input("Enter: ")
+        if user_input.lower() in ["exit", "quit", "q"]:
+            break
+        inputs = {"messages": [HumanMessage(content=user_input)]}
+        agent.invoke(inputs)
