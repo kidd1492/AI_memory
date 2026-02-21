@@ -1,61 +1,25 @@
 from langchain_ollama import ChatOllama
-from langgraph.graph import START, END, StateGraph
+from langgraph.graph import START, END, StateGraph, MessagesState
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from typing import TypedDict, List
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import HumanMessage, SystemMessage
 from token_log import log_turn_metrics
 from memory_service import *
 
 @tool
-def get_last_message_tool() -> str:
-    """Return the last stored message content from memory."""
+def search_memory(query:str):
+    """Return a top k simularity search from past messeges in the conversation."""
     print("tool called", "\n")
-    last = db.get_last_message()
-    if last is None:
-        return "No messages stored yet."
-    print(f"\nlast = {last}")
-    return last
+    embed_query = embed_messages(query)
+    results = check_memory(embed_query)
+    return results
 
 
-model = ChatOllama(model="qwen2.5:3b").bind_tools(tools=[get_last_message_tool])
+model = ChatOllama(model="qwen2.5:3b").bind_tools(tools=[search_memory])
 
 
-class AgentState(TypedDict):
-    messages: List[HumanMessage]
-    ai_message: List[AIMessage]
-    tool_message: List[ToolMessage]
+class AgentState(MessagesState):
     retrieved_memory: str | None
-
-
-TOOLS = {
-    "get_last_message_tool": get_last_message_tool,
-}
-
-def tool_node(state: AgentState):
-    last = state["ai_message"][0]
-
-    if not hasattr(last, "tool_calls") or not last.tool_calls:
-        return state
-
-    tool_call = last.tool_calls[0]
-    tool_name = tool_call["name"]
-    tool_args = tool_call["args"]
-
-    # Look up the correct tool dynamically
-    tool_fn = TOOLS.get(tool_name)
-    if tool_fn is None:
-        result = f"Error: unknown tool '{tool_name}'"
-    else:
-        result = tool_fn.invoke(tool_args) 
-
-    tool_msg = ToolMessage(
-        content=str(result),
-        tool_call_id=tool_call["id"]
-    )
-
-    state["tool_message"] = [tool_msg]
-    return state
-
 
 
 def human_node(state: AgentState):
@@ -76,26 +40,29 @@ def human_node(state: AgentState):
 
 
 def chat_node(state: AgentState):
-    user_message = state["messages"][0]
     memory_context = state["retrieved_memory"]
 
     system_prompt = SystemMessage(
-        content="Use the following conversation to inform your response:\n" + memory_context + "for general questions just answer. if needed tool avaliable get_last_message_tool for more context"
+        content=(
+            "Use the following conversation to inform your response:\n"
+            + memory_context
+            + "\nYou have access to a tool that allows you to query past memory with a string query"
+              "If needed, the tool search_memory is available."
+              "example usage search_memory(query:str)"
+        )
     )
 
-    full_prompt = [system_prompt, user_message]
-
-    if state.get("tool_message"):
-        full_prompt.append(state["tool_message"][0])
+    messages = state["messages"]
+    full_prompt = [system_prompt] + messages
 
     response = model.invoke(full_prompt)
-
     print(f"\n{response.content}\n")
-
+    
+    # Logging
     usage = response.usage_metadata
     log_turn_metrics(
         turn_id=db.count(),
-        input_text=user_message.content,
+        input_text=messages[-1].content,
         memory_context=memory_context,
         response_text=response.content,
         usage=usage
@@ -104,40 +71,21 @@ def chat_node(state: AgentState):
     embedding_array = embed_messages(response.content)
     store_response(response, embedding_array)
 
-    state["ai_message"] = [response]
-    return state
+    return {"messages": [response]}
 
 
-def needs_tool(state: AgentState) -> bool:
-    ai_list = state.get("ai_message", [])
-    if not ai_list:
-        return False
-    ai_msg = ai_list[0]
-    return hasattr(ai_msg, "tool_calls") and bool(ai_msg.tool_calls)
+tool_node = ToolNode(tools=[search_memory])
 
-
-# -------------------------
-# GRAPH DEFINITION
-# -------------------------
 graph = StateGraph(AgentState)
 
 graph.add_node("human_node", human_node)
 graph.add_node("chat_node", chat_node)
-graph.add_node("tool_node", tool_node)
+graph.add_node("tools", tool_node)
 
 graph.add_edge(START, "human_node")
 graph.add_edge("human_node", "chat_node")
-
-graph.add_conditional_edges(
-    "chat_node",
-    needs_tool,
-    {
-        True: "tool_node",
-        False: END,
-    }
-)
-
-graph.add_edge("tool_node", "chat_node")
+graph.add_conditional_edges("chat_node", tools_condition, {"tools": "tools", "__end__": END})
+graph.add_edge("tools", "chat_node")
 
 agent = graph.compile()
 
@@ -146,6 +94,7 @@ if __name__ == "__main__":
     while True:
         user_input = input("Enter: ")
         if user_input.lower() in ["exit", "quit", "q"]:
+            db.close()
             break
         inputs = {"messages": [HumanMessage(content=user_input)]}
         agent.invoke(inputs)

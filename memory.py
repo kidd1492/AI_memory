@@ -36,7 +36,7 @@ class RAGDatabase:
         return cursor.fetchone()[0]
 
 
-    def search_similar(self, query_embedding: np.ndarray, top_k: int = 5, threshold: float = 0.5) -> List[Tuple[str, str]]:
+    def search_similar(self, query_embedding: np.ndarray, top_k: int = 3, threshold: float = 0.6) -> List[Tuple[str, str]]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT role, content, embedding FROM messages")
         results = []
@@ -57,13 +57,8 @@ class RAGDatabase:
         cursor.execute("""
             SELECT content FROM messages WHERE role == "ai"
         """)
-        row = cursor.fetchall()
+        row = cursor.fetchone()
+        return row if row else None
 
-        if row:
-            try:
-                return row[-2]   # content string
-            except:
-                if IndexError:return None
-        return None
-
-
+    def close(self):
+        self.conn.close()

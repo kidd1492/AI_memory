@@ -1,4 +1,4 @@
-from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from memory import RAGDatabase
 import numpy as np
 
@@ -13,13 +13,13 @@ def embed_messages(content):
 
 
 def check_memory(embedding):
-    retrieved = db.search_similar(embedding, top_k=5)
+    retrieved = db.search_similar(embedding, top_k=3)
     memory_context = "\n".join(
         [f"{role}: {content}" for role, content in retrieved]
     ) or "No relevant memory found."
     return memory_context
 
-
+ 
 def store_response(message, embedding_array):
     text = message.content
     db.add_message(
