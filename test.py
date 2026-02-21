@@ -15,7 +15,7 @@ def search_memory(query:str):
     return results
 
 
-model = ChatOllama(model="qwen2.5:3b").bind_tools(tools=[search_memory])
+model = ChatOllama(model="qwen2.5:3b") #.bind_tools(tools=[search_memory])
 
 
 class AgentState(MessagesState):
@@ -46,9 +46,6 @@ def chat_node(state: AgentState):
         content=(
             "Use the following conversation to inform your response:\n"
             + memory_context
-            + "\nYou have access to a tool that allows you to query past memory with a string query"
-              "If needed, the tool search_memory is available."
-              "example usage search_memory(query:str)"
         )
     )
 
@@ -80,12 +77,13 @@ graph = StateGraph(AgentState)
 
 graph.add_node("human_node", human_node)
 graph.add_node("chat_node", chat_node)
-graph.add_node("tools", tool_node)
+#graph.add_node("tools", tool_node)
 
 graph.add_edge(START, "human_node")
 graph.add_edge("human_node", "chat_node")
-graph.add_conditional_edges("chat_node", tools_condition, {"tools": "tools", "__end__": END})
-graph.add_edge("tools", "chat_node")
+#graph.add_conditional_edges("chat_node", tools_condition, {"tools": "tools", "__end__": END})
+#graph.add_edge("tools", "chat_node")
+graph.add_edge("chat_node", END)
 
 agent = graph.compile()
 
