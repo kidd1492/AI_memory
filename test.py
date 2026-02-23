@@ -60,8 +60,6 @@ def chat_node(state: AgentState):
     log_turn_metrics(
         turn_id=db.count(),
         input_text=messages[-1].content,
-        memory_context=memory_context,
-        response_text=response.content,
         usage=usage
     )
 
