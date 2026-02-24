@@ -1,6 +1,6 @@
 import json
 
-def log_turn_metrics(turn_id, input_text, usage):
+def log_turn_metrics(turn_id, input_text, usage, file):
     log_entry = {
         "turn": turn_id,
         "input": input_text,
@@ -8,5 +8,5 @@ def log_turn_metrics(turn_id, input_text, usage):
         "output_tokens": usage.get("output_tokens"),
         "total_tokens": usage.get("total_tokens")
     }
-    with open("token_metrics.jsonl", "a") as f:
+    with open(file, "a") as f:
         f.write(json.dumps(log_entry) + "\n")
